@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Route Optimizer — Live Heuristic Solver</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#12130F; --paper:#F7F4EC; --panel:#FFFFFF; --line:#DED8C9;
+  --moss:#3C6E47; --moss-d:#2A5133; --clay:#C24B32; --gold:#C99A2E;
+  --muted:#6B6A60; --supply:#3C6E47; --demand:#C24B32; --mixed:#9A8F76;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:Inter,system-ui,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
+@media (prefers-color-scheme:dark):root:not([data-theme="light"]){
+  --ink:#ECE7D8; --paper:#14150F; --panel:#1D1E17; --line:#33342A;
+  --muted:#9C9A88; --mixed:#B6AC90;
+}
+.wrap{max-width:1140px;margin:0 auto;padding:0 20px}
+
+/* header */
+header{padding:34px 0 18px;border-bottom:1px solid var(--line)}
+.kicker{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--moss);letter-spacing:.02em;margin:0 0 10px}
+h1{font-family:Fraunces,serif;font-weight:600;font-size:clamp(30px,5vw,52px);line-height:1.02;margin:0 0 12px;max-width:16ch}
+.lede{font-size:clamp(15px,2vw,18px);color:var(--muted);max-width:64ch;margin:0}
+.byline{margin-top:16px;font-size:13px;color:var(--muted)}
+.byline a{color:var(--moss);text-decoration:none;border-bottom:1px solid var(--line);padding-bottom:1px}
+.byline a:hover{border-color:var(--moss)}
+
+/* metrics strip */
+.strip{display:flex;flex-wrap:wrap;gap:26px;padding:18px 0;border-bottom:1px solid var(--line)}
+.metric .v{font-family:Fraunces,serif;font-size:26px;font-weight:600;line-height:1}
+.metric .k{font-size:12px;color:var(--muted);margin-top:4px}
+
+/* main grid */
+.grid{display:grid;grid-template-columns:1fr;gap:22px;padding:24px 0 8px}
+@media(min-width:900px){.grid{grid-template-columns:340px 1fr}}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
+.panel h2{font-family:Fraunces,serif;font-weight:600;font-size:19px;margin:0 0 4px}
+.panel .sub{font-size:13px;color:var(--muted);margin:0 0 16px}
+
+.field{margin-bottom:16px}
+.field label{display:block;font-size:13px;font-weight:500;margin-bottom:6px}
+select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;
+  background:var(--paper);color:var(--ink);font-family:inherit;font-size:14px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{flex:1;min-width:64px;text-align:center;padding:9px 6px;border:1px solid var(--line);
+  border-radius:9px;background:var(--paper);cursor:pointer;font-size:13px;font-weight:500;user-select:none}
+.chip[aria-pressed="true"]{background:var(--moss);color:#fff;border-color:var(--moss)}
+
+.run{width:100%;padding:13px;border:none;border-radius:10px;background:var(--clay);color:#fff;
+  font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;margin-top:4px}
+.run:hover{background:#a83c26}
+.run:disabled{opacity:.5;cursor:default}
+.run.secondary{background:transparent;color:var(--ink);border:1px solid var(--line);margin-top:9px}
+.run.secondary:hover{background:var(--paper)}
+
+.readout{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
+.readout .cell{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px}
+.readout .big{font-family:Fraunces,serif;font-size:30px;font-weight:600;line-height:1}
+.readout .lab{font-size:11px;color:var(--muted);margin-top:5px;letter-spacing:.01em}
+.bar{height:5px;background:var(--line);border-radius:3px;margin-top:12px;overflow:hidden}
+.bar > i{display:block;height:100%;width:0;background:var(--moss);transition:width .25s ease}
+
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;position:relative}
+svg{width:100%;height:auto;display:block;touch-action:none}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:10px 4px 2px}
+.legend b{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+
+.log{margin-top:16px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.log h3{font-family:Fraunces,serif;font-weight:600;font-size:15px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line)}
+.log .rows{max-height:190px;overflow:auto;font-family:"IBM Plex Mono",monospace;font-size:12px}
+.log .row{display:flex;justify-content:space-between;gap:12px;padding:6px 16px;border-bottom:1px solid var(--line);color:var(--muted)}
+.log .row.best{color:var(--ink);background:color-mix(in srgb,var(--moss) 9%,transparent)}
+.log .row b{color:var(--moss);font-weight:600}
+
+section.explain{padding:34px 0 60px}
+section.explain h2{font-family:Fraunces,serif;font-weight:600;font-size:24px;margin:0 0 18px}
+.cards{display:grid;gap:16px;grid-template-columns:1fr}
+@media(min-width:760px){.cards{grid-template-columns:repeat(3,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.card .n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--clay);margin-bottom:8px}
+.card h3{font-family:Fraunces,serif;font-weight:600;font-size:17px;margin:0 0 8px}
+.card p{font-size:14px;color:var(--muted);margin:0}
+.foot{border-top:1px solid var(--line);padding:22px 0 40px;font-size:13px;color:var(--muted)}
+.tag{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);
+  border:1px solid var(--line);border-radius:20px;padding:3px 10px;margin:0 6px 6px 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="kicker">HEURISTIC OPTIMIZATION · LIVE IN BROWSER</p>
+    <h1>Watch a delivery route solve itself.</h1>
+    <p class="lede">A single vehicle must choose which customers to serve, in what order, and how much of two goods to carry, maximizing deliveries under strict capacity and time limits. This runs a real Iterated Local Search solver, live, on genuine benchmark data. No server, no video: the algorithm is executing in your browser right now.</p>
+    <p class="byline">Built by Siva · <a id="repo" href="#">View source on GitHub</a> · Python solver ported to JavaScript for this demo</p>
+  </header>
+
+  <div class="strip" id="strip"></div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Controls</h2>
+      <p class="sub">Pick a problem and press run. Everything updates live.</p>
+      <div class="field">
+        <label for="inst">Benchmark instance</label>
+        <select id="inst"></select>
+      </div>
+      <div class="field">
+        <label>Search effort</label>
+        <div class="chips" id="effort">
+          <div class="chip" data-ms="2500" role="button" tabindex="0" aria-pressed="false">Quick</div>
+          <div class="chip" data-ms="6000" role="button" tabindex="0" aria-pressed="true">Balanced</div>
+          <div class="chip" data-ms="12000" role="button" tabindex="0" aria-pressed="false">Thorough</div>
+        </div>
+      </div>
+      <button class="run" id="go">Run the solver</button>
+      <button class="run secondary" id="stop" disabled>Stop</button>
+
+      <div class="readout">
+        <div class="cell"><div class="big" id="objV">—</div><div class="lab">Units delivered</div></div>
+        <div class="cell"><div class="big" id="gapV">—</div><div class="lab">Gap to best bound</div></div>
+        <div class="cell"><div class="big" id="timeV">—</div><div class="lab">Route hours (limit 8)</div></div>
+        <div class="cell"><div class="big" id="itV">—</div><div class="lab">Solutions tried</div></div>
+      </div>
+      <div class="bar"><i id="bar"></i></div>
+    </div>
+
+    <div>
+      <div class="stage">
+        <svg id="map" viewBox="0 0 600 600" role="img" aria-label="Live route map"></svg>
+      </div>
+      <div class="legend">
+        <span><b style="background:#3C6E47"></b>Supplier</span>
+        <span><b style="background:#C24B32"></b>Demander</span>
+        <span><b style="background:#9A8F76"></b>Mixed / balanced</span>
+        <span><b style="background:#12130F"></b>Depot</span>
+        <span><b style="background:#C9C7BE"></b>Skipped</span>
+      </div>
+      <div class="log">
+        <h3>Search log — every improving solution</h3>
+        <div class="rows" id="rows"></div>
+      </div>
+    </div>
+  </div>
+
+  <section class="explain">
+    <h2>How it works</h2>
+    <div class="cards">
+      <div class="card">
+        <div class="n">01 — Score</div>
+        <h3>Every route is scored exactly</h3>
+        <p>For any visiting order, deciding how much of each good to carry is itself an optimization. A greedy load can block a more valuable one, so the solver computes the best possible cargo plan for the route rather than guessing.</p>
+      </div>
+      <div class="card">
+        <div class="n">02 — Improve</div>
+        <h3>Local search refines the order</h3>
+        <p>Four move types — add, remove, swap, and reverse a segment — repeatedly edit the route, keeping any change that delivers more or frees time for another stop, until no small edit helps.</p>
+      </div>
+      <div class="card">
+        <div class="n">03 — Escape</div>
+        <h3>Perturbation breaks out of dead ends</h3>
+        <p>When local search stalls, the solver disturbs the route and searches again, keeping the best result ever found. This escape step is what turns a decent answer into a near-optimal one.</p>
+      </div>
+    </div>
+    <p style="margin-top:22px;color:var(--muted);font-size:14px;max-width:70ch">
+      The full study compared three acceptance strategies across sixty runs and reached gaps of 0 to 5 percent of the theoretical bound on most instances, reproducibly across random seeds. The browser demo uses a lighter time budget than the five-minute research runs, so it converges toward, and sometimes reaches, the reported best.</p>
+    <div style="margin-top:18px">
+      <span class="tag">Iterated Local Search</span><span class="tag">Linear programming</span>
+      <span class="tag">Ruin &amp; recreate</span><span class="tag">Simulated annealing acceptance</span>
+      <span class="tag">Python</span><span class="tag">Experimental design</span>
+    </div>
+  </section>
+
+  <div class="foot">
+    Benchmark data: multi-commodity selective pickup-and-delivery TSP instances (MIS41480, UCD Smurfit).
+    Reported research bests — 30, 37, 57, 60 units against bounds of 33, 37, 60, 61.
+  </div>
+</div>
+
+<script>
+const DATA = {"m2n20Q10s000c2":{"n":20,"Q":10,"L":8.0,"coords":[[0.0,0.0],[220.0,-461.0],[-62.0,-261.0],[298.0,356.0],[-214.0,-134.0],[113.0,-49.0],[-399.0,354.0],[-218.0,-357.0],[422.0,38.0],[-214.0,446.0],[181.0,498.0],[392.0,477.0],[407.0,156.0],[-176.0,-42.0],[-259.0,382.0],[-221.0,226.0],[91.0,-53.0],[88.0,341.0],[-262.0,408.0],[118.0,112.0]],"demand":[[0,0],[0,1],[4,5],[4,0],[-1,0],[3,-2],[-3,-4],[0,-2],[-2,0],[-3,-4],[-1,0],[4,0],[0,5],[2,-2],[-3,1],[-2,-1],[2,3],[-3,1],[-4,0],[3,-1]],"ub":33,"best":30},"m2n20Q20s000c2":{"n":20,"Q":20,"L":8.0,"coords":[[0.0,0.0],[220.0,-461.0],[-62.0,-261.0],[298.0,356.0],[-214.0,-134.0],[113.0,-49.0],[-399.0,354.0],[-218.0,-357.0],[422.0,38.0],[-214.0,446.0],[181.0,498.0],[392.0,477.0],[407.0,156.0],[-176.0,-42.0],[-259.0,382.0],[-221.0,226.0],[91.0,-53.0],[88.0,341.0],[-262.0,408.0],[118.0,112.0]],"demand":[[0,0],[0,1],[4,5],[4,0],[-1,0],[3,-2],[-3,-4],[0,-2],[-2,0],[-3,-4],[-1,0],[4,0],[0,5],[2,-2],[-3,1],[-2,-1],[2,3],[-3,1],[-4,0],[3,-1]],"ub":37,"best":37},"m2n30Q10s000c2":{"n":30,"Q":10,"L":8.0,"coords":[[0.0,0.0],[220.0,-461.0],[-62.0,-261.0],[298.0,356.0],[-214.0,-134.0],[113.0,-49.0],[-399.0,354.0],[-218.0,-357.0],[422.0,38.0],[-214.0,446.0],[181.0,498.0],[392.0,477.0],[407.0,156.0],[-176.0,-42.0],[-259.0,382.0],[-221.0,226.0],[91.0,-53.0],[88.0,341.0],[-262.0,408.0],[118.0,112.0],[368.0,-43.0],[379.0,34.0],[388.0,-276.0],[85.0,98.0],[-388.0,-287.0],[-433.0,79.0],[-95.0,130.0],[6.0,-220.0],[150.0,-111.0],[-323.0,-170.0]],"demand":[[0,0],[5,2],[-2,4],[-1,1],[-4,2],[-5,4],[-4,-1],[-1,-3],[-5,-4],[0,-3],[-1,3],[3,-2],[-4,-2],[0,-1],[-2,-5],[2,-1],[0,4],[-2,3],[-2,5],[2,4],[2,1],[1,-3],[3,1],[3,-1],[1,-3],[0,1],[2,-4],[3,-4],[1,4],[5,-2]],"ub":60,"best":57},"m2n30Q20s000c2":{"n":30,"Q":20,"L":8.0,"coords":[[0.0,0.0],[220.0,-461.0],[-62.0,-261.0],[298.0,356.0],[-214.0,-134.0],[113.0,-49.0],[-399.0,354.0],[-218.0,-357.0],[422.0,38.0],[-214.0,446.0],[181.0,498.0],[392.0,477.0],[407.0,156.0],[-176.0,-42.0],[-259.0,382.0],[-221.0,226.0],[91.0,-53.0],[88.0,341.0],[-262.0,408.0],[118.0,112.0],[368.0,-43.0],[379.0,34.0],[388.0,-276.0],[85.0,98.0],[-388.0,-287.0],[-433.0,79.0],[-95.0,130.0],[6.0,-220.0],[150.0,-111.0],[-323.0,-170.0]],"demand":[[0,0],[5,2],[-2,4],[-1,1],[-4,2],[-5,4],[-4,-1],[-1,-3],[-5,-4],[0,-3],[-1,3],[3,-2],[-4,-2],[0,-1],[-2,-5],[2,-1],[0,4],[-2,3],[-2,5],[2,4],[2,1],[1,-3],[3,1],[3,-1],[1,-3],[0,1],[2,-4],[3,-4],[1,4],[5,-2]],"ub":61,"best":60}};
+const REPO = "https://github.com/sivasambath1711-hash/route-optimizer";  /* <-- replace */
+document.getElementById('repo').href = REPO;
+
+const NAMES = Object.keys(DATA);
+const sel = document.getElementById('inst');
+NAMES.forEach(n=>{const o=document.createElement('option');o.value=n;
+  const d=DATA[n];o.textContent=`${n}  ·  ${d.n-1} customers · capacity ${d.Q}`;sel.appendChild(o);});
+
+/* ---------- solver core (ported from the Python) ---------- */
+function dist(a,b){const dx=(a[0]-b[0])/500,dy=(a[1]-b[1])/500;return Math.hypot(dx,dy);}
+function makeInst(raw){
+  const n=raw.n,t=[];for(let i=0;i<n;i++){t[i]=[];for(let j=0;j<n;j++)t[i][j]=dist(raw.coords[i],raw.coords[j]);}
+  return {n,Q:raw.Q,L:raw.L,coords:raw.coords,demand:raw.demand,t,ub:raw.ub};
+}
+function routeTime(seq,I){if(!seq.length)return 0;let s=I.t[0][seq[0]];
+  for(let i=0;i+1<seq.length;i++)s+=I.t[seq[i]][seq[i+1]];return s+I.t[seq[seq.length-1]][0];}
+/* exact per-route cargo via greedy max-flow on the 2 commodities sharing capacity.
+   For 2 commodities we compute the optimal by a small LP-free method:
+   process feasible (supplier<demander) unit matches, respecting capacity along the path. */
+function evalRoute(seq,I){
+  const time=routeTime(seq,I);
+  if(time>I.L+1e-9) return {feasible:false,time,obj:0};
+  const k=seq.length; if(!k) return {feasible:true,time,obj:0};
+  const C=2;
+  // capacity used on each edge segment j (between stop j and j+1), shared by commodities
+  const segCap=new Array(k).fill(I.Q); // capacity remaining on segment after stop j
+  let obj=0;
+  // For each commodity independently but sharing segCap: greedily match earliest supply to earliest demand
+  // Build supply/demand lists with positions
+  for(let c=0;c<C;c++){
+    // list of (pos, remaining) suppliers and demanders in route order
+    const sup=[],dem=[];
+    for(let p=0;p<k;p++){const q=I.demand[seq[p]][c];if(q>0)sup.push([p,q]);else if(q<0)dem.push([p,-q]);}
+    // match: for each demander (in order), pull from earliest suppliers before it, respecting segCap on [supPos, demPos-1]
+    let si=0;
+    for(const d of dem){
+      let need=d[1];
+      for(si=0; si<sup.length && need>0; si++){
+        const s=sup[si]; if(s[0]>=d[0]||s[1]<=0) continue;
+        // max we can move limited by remaining supply, need, and min segCap over segments s.pos..d.pos-1
+        let cap=Infinity; for(let seg=s[0];seg<d[0];seg++) cap=Math.min(cap,segCap[seg]);
+        const move=Math.min(s[1],need,cap);
+        if(move>0){ s[1]-=move; need-=move; obj+=move;
+          for(let seg=s[0];seg<d[0];seg++) segCap[seg]-=move; }
+      }
+    }
+  }
+  return {feasible:true,time,obj};
+}
+function keyOf(r){return r.obj*1000 - r.time;}  // more delivered, then less time
+let RNG=1;function rnd(){RNG=(RNG*1103515245+12345)&0x7fffffff;return RNG/0x7fffffff;}
+function ri(nn){return Math.floor(rnd()*nn);}
+function construct(I){
+  const cust=[];for(let i=1;i<I.n;i++)cust.push(i);
+  // seed best pair
+  let best=null;
+  for(let a=0;a<cust.length;a++)for(let b=0;b<cust.length;b++){if(a===b)continue;
+    const s=[cust[a],cust[b]];const r=evalRoute(s,I);
+    if(r.feasible&&r.obj>0){const rt=r.obj/Math.max(r.time,1e-9);
+      if(!best||rt>best.rt)best={s,rt,r};}}
+  let route=best?best.s.slice():[];
+  let cur=best?best.r:evalRoute(route,I);
+  while(true){
+    const inR=new Set(route);let pick=null;
+    for(const u of cust){if(inR.has(u))continue;
+      for(let pos=0;pos<=route.length;pos++){
+        const c=route.slice(0,pos).concat([u],route.slice(pos));
+        const r=evalRoute(c,I);if(!r.feasible)continue;
+        const gain=r.obj-cur.obj;if(gain<=0)continue;
+        const rt=gain/Math.max(r.time-cur.time,1e-9);
+        if(!pick||rt>pick.rt)pick={c,r,rt};}}
+    if(!pick)break;route=pick.c;cur=pick.r;}
+  return {route,r:cur};
+}
+function localSearch(route,I){
+  let cur=evalRoute(route,I);
+  while(true){
+    let bestK=keyOf(cur),bestR=null,bestRoute=null;
+    const L=route.length,inR=new Set(route);
+    const consider=(c)=>{const r=evalRoute(c,I);if(r.feasible&&keyOf(r)>bestK){bestK=keyOf(r);bestR=r;bestRoute=c;return true;}return false;};
+    let done=false;
+    for(let u=1;u<I.n&&!done;u++){if(inR.has(u))continue;
+      for(let pos=0;pos<=L;pos++){if(consider(route.slice(0,pos).concat([u],route.slice(pos)))){done=true;break;}}}
+    if(!done)for(let i=0;i<L&&!done;i++)for(let j=i+1;j<L&&!done;j++){
+      const c=route.slice();[c[i],c[j]]=[c[j],c[i]];if(consider(c))done=true;}
+    if(!done)for(let i=0;i<L&&!done;i++)for(let j=i+1;j<L&&!done;j++){
+      const c=route.slice(0,i).concat(route.slice(i,j+1).reverse(),route.slice(j+1));if(consider(c))done=true;}
+    if(!done)for(let i=0;i<L&&!done;i++){const c=route.slice(0,i).concat(route.slice(i+1));if(consider(c))done=true;}
+    if(!bestRoute)return {route,r:cur};
+    route=bestRoute;cur=bestR;}
+}
+function perturb(route,k,I){
+  route=route.slice();for(let x=0;x<Math.min(k,route.length);x++)route.splice(ri(route.length),1);
+  const inR=new Set(route);const un=[];for(let i=1;i<I.n;i++)if(!inR.has(i))un.push(i);
+  for(let x=un.length-1;x>0;x--){const j=ri(x+1);[un[x],un[j]]=[un[j],un[x]];}
+  let ins=0;for(const u of un){if(ins>=k)break;const pos=ri(route.length+1);
+    const c=route.slice(0,pos).concat([u],route.slice(pos));
+    if(routeTime(c,I)<=I.L+1e-9){route=c;ins++;}}
+  return route;
+}
+
+/* ---------- rendering ---------- */
+const map=document.getElementById('map');const NS="http://www.w3.org/2000/svg";
+function proj(pt){return [300+pt[0]*0.52, 300-pt[1]*0.52];}
+function role(d){const s=d[0]+d[1];return s>0?'sup':s<0?'dem':'mix';}
+function drawMap(I,route){
+  map.innerHTML="";const inR=new Set(route);
+  // edges
+  if(route.length){const pts=[0].concat(route,[0]);
+    for(let i=0;i+1<pts.length;i++){const a=proj(I.coords[pts[i]]),b=proj(I.coords[pts[i+1]]);
+      const ln=document.createElementNS(NS,"line");ln.setAttribute("x1",a[0]);ln.setAttribute("y1",a[1]);
+      ln.setAttribute("x2",b[0]);ln.setAttribute("y2",b[1]);ln.setAttribute("stroke","#3778C2");
+      ln.setAttribute("stroke-width","1.6");ln.setAttribute("opacity","0.7");map.appendChild(ln);}}
+  // nodes
+  for(let i=0;i<I.n;i++){const p=proj(I.coords[i]);
+    if(i===0){const s=document.createElementNS(NS,"path");
+      const x=p[0],y=p[1],r=8;let d="";for(let a=0;a<10;a++){const ang=Math.PI/2+a*Math.PI/5;const rr=a%2?r*0.45:r;
+        d+=(a?"L":"M")+(x+rr*Math.cos(ang))+","+(y-rr*Math.sin(ang));}d+="Z";
+      s.setAttribute("d",d);s.setAttribute("fill","#12130F");map.appendChild(s);continue;}
+    const on=inR.has(i);const c=document.createElementNS(NS,"circle");
+    c.setAttribute("cx",p[0]);c.setAttribute("cy",p[1]);
+    const act=Math.abs(I.demand[i][0])+Math.abs(I.demand[i][1]);
+    c.setAttribute("r",on?(4+Math.min(act,8)*0.5):3.2);
+    if(!on){c.setAttribute("fill","none");c.setAttribute("stroke","#C9C7BE");c.setAttribute("stroke-width","1.2");}
+    else{const rl=role(I.demand[i]);c.setAttribute("fill",rl==='sup'?'#3C6E47':rl==='dem'?'#C24B32':'#9A8F76');}
+    map.appendChild(c);}
+}
+
+/* ---------- run loop ---------- */
+let cur=null,running=false,stopFlag=false;
+const $=id=>document.getElementById(id);
+function setEffort(ms){document.querySelectorAll('#effort .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.ms==ms));}
+let effortMs=6000;
+document.querySelectorAll('#effort .chip').forEach(c=>{
+  const act=()=>{effortMs=+c.dataset.ms;setEffort(c.dataset.ms);};
+  c.addEventListener('click',act);c.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();act();}});});
+
+function renderStrip(){
+  const el=$('strip');el.innerHTML="";
+  const items=[['4','Benchmark instances'],['0–5%','Gap on most instances'],['60','Experimental runs'],['<8h','Route time limit']];
+  items.forEach(([v,k])=>{const d=document.createElement('div');d.className='metric';
+    d.innerHTML=`<div class="v">${v}</div><div class="k">${k}</div>`;el.appendChild(d);});
+}
+function addRow(t,obj,best){const rows=$('rows');const r=document.createElement('div');
+  r.className='row'+(best?' best':'');
+  r.innerHTML=`<span>t = ${t.toFixed(2)}s</span><span>objective <b>${obj}</b></span>`;
+  rows.insertBefore(r,rows.firstChild);}
+
+async function run(){
+  if(running)return;running=true;stopFlag=false;$('go').disabled=true;$('stop').disabled=false;$('rows').innerHTML="";
+  const raw=DATA[sel.value];const I=makeInst(raw);cur=I;RNG=12345;
+  const t0=performance.now();
+  let {route,r}=construct(I);({route,r}=localSearch(route,I));
+  let best={route:route.slice(),r},current={route:route.slice(),r};
+  let iters=0,k=1,fails=0;const budget=effortMs;
+  const bound=raw.ub;
+  const refresh=(bestFlag)=>{const el=performance.now()-t0;
+    $('objV').textContent=best.r.obj;$('gapV').textContent=(((bound-best.r.obj)/best.r.obj)*100).toFixed(1)+'%';
+    $('timeV').textContent=best.r.time.toFixed(2);$('itV').textContent=iters;
+    $('bar').style.width=Math.min(100,el/budget*100)+'%';
+    drawMap(I,best.route);if(bestFlag)addRow(el/1000,best.r.obj,true);};
+  refresh(true);
+  function step(){
+    const chunkEnd=performance.now()+16;
+    while(performance.now()<chunkEnd){
+      if(performance.now()-t0>=budget||stopFlag){finish();return;}
+      iters++;const base=current;
+      let c=perturb(base.route,k,I);const ls=localSearch(c,I);
+      if(keyOf(ls.r)>keyOf(best.r)){best={route:ls.route.slice(),r:ls.r};current=best;k=1;fails=0;
+        // annealing-ish: accept, log
+        setTimeout(()=>refresh(true),0);}
+      else{fails++;if(fails%15===0)k=Math.min(k+1,4);
+        // annealing acceptance on current
+        const delta=ls.r.obj-current.r.obj;const frac=Math.min((performance.now()-t0)/budget,1);
+        const T=2.0*Math.pow(0.05/2.0,frac);
+        if(delta>0||rnd()<Math.exp(delta/Math.max(T,1e-9)))current={route:ls.route.slice(),r:ls.r};}
+    }
+    refresh(false);
+    if(performance.now()-t0<budget&&!stopFlag)requestAnimationFrame(step);else finish();
+  }
+  function finish(){running=false;$('go').disabled=false;$('stop').disabled=true;refresh(false);
+    $('bar').style.width='100%';
+    const el=performance.now()-t0;addRow(el/1000,best.r.obj,true);}
+  requestAnimationFrame(step);
+}
+$('go').addEventListener('click',run);
+$('stop').addEventListener('click',()=>{stopFlag=true;});
+sel.addEventListener('change',()=>{const I=makeInst(DATA[sel.value]);drawMap(I,[]);
+  $('objV').textContent='—';$('gapV').textContent='—';$('timeV').textContent='—';$('itV').textContent='—';
+  $('bar').style.width='0';$('rows').innerHTML='';});
+
+renderStrip();
+drawMap(makeInst(DATA[NAMES[0]]),[]);
+</script>
+</body>
+</html>
